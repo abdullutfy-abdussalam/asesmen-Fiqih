@@ -61,7 +61,7 @@
                 <!-- SVG Logo SMA Abdussalam -->
                 <div class="w-12 h-12 bg-white rounded-full p-1 flex items-center justify-center shadow-inner">
                     <svg viewBox="0 0 200 200" class="w-full h-full">
-                        <polygon points="100,10 fill="#006400" stroke="#DAA520" stroke-width="6"/>
+                        <polygon points="100,10 185,72 153,178 47,178 15,72" fill="#006400" stroke="#DAA520" stroke-width="6"/>
                         <circle cx="100" cy="115" r="55" fill="none" stroke="#DAA520" stroke-width="5"/>
                         <polygon points="100,30 145,110 55,110" fill="#006400" stroke="#DAA520" stroke-width="4"/>
                         <polygon points="100,38 103,46 112,46 105,51 107,59 100,54 93,59 95,51 88,46 97,46" fill="#DAA520"/>
@@ -866,29 +866,191 @@
         }
 
         function submitAssessmentFinal() {
-            if (timerInterval) clearInterval(timerInterval);
+            if (!currentStudent || !preparedQuestions.length) {
+                alert('Sesi asesmen tidak ditemukan. Silakan mulai kembali.');
+                showSection('secLanding');
+                return;
+            }
+            if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
 
-            // Grade Calculation
             let correctCount = 0;
             preparedQuestions.forEach((q, qIdx) => {
-                const studentOptIdx = studentAnswers[qIdx];
-                if (studentOptIdx !== undefined && q.options[studentOptIdx].isCorrect) {
-                    correctCount++;
-                }
+                const selected = studentAnswers[qIdx];
+                if (selected !== undefined && q.options[selected] && q.options[selected].isCorrect) correctCount++;
             });
-
             const wrongCount = 50 - correctCount;
-            const finalScore = correctCount * 2; // 50 * 2 = 100 max
+            const finalScore = correctCount * 2;
             const percentage = Math.round((correctCount / 50) * 100);
+            const submittedAt = new Date().toISOString();
 
-            // Reward Stars & Motivation Message
             let starsHTML = '';
             let gradeText = '';
             let motivationText = '';
-
-            if (finalScore === 100) {
+            if (finalScore >= 90) {
                 starsHTML = '<i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i>';
-                gradeText = 'Istimewa — Bintang 3 Emas';
-                motivationText = '"Masyaallah! Luar biasa! Kamu berhasil mendapatkan nilai sempurna. Pertahankan semangat menuntut ilmu dan teruslah menjadi pribadi yang berprestasi."';
-            } else if (finalScore >= 91) {
-                stars
+                gradeText = 'Sangat Baik';
+                motivationText = 'Masyaallah, hasil yang sangat baik. Pertahankan semangat belajar dan terus tingkatkan pemahaman Fiqih.';
+            } else if (finalScore >= 80) {
+                starsHTML = '<i class="fas fa-star"></i><i class="fas fa-star"></i>';
+                gradeText = 'Baik';
+                motivationText = 'Alhamdulillah, hasil yang baik. Teruslah belajar agar pemahaman semakin kuat.';
+            } else if (finalScore >= 70) {
+                starsHTML = '<i class="fas fa-star"></i>';
+                gradeText = 'Cukup';
+                motivationText = 'Terus semangat. Pelajari kembali materi yang belum dikuasai dan tingkatkan hasil pada kesempatan berikutnya.';
+            } else {
+                starsHTML = '<i class="far fa-star"></i>';
+                gradeText = 'Perlu Belajar Kembali';
+                motivationText = 'Jangan berkecil hati. Hasil ini menjadi bahan evaluasi untuk belajar lebih tekun.';
+            }
+
+            const record = {
+                ...currentStudent,
+                submittedAt,
+                correctCount,
+                wrongCount,
+                score: finalScore,
+                percentage,
+                answers: { ...studentAnswers },
+                doubtful: { ...doubtfulQuestions },
+                durationSeconds: Math.max(0, 90 * 60 - timeRemaining)
+            };
+            try {
+                const db = getDatabase();
+                const existingIndex = db.findIndex(item => String(item.noPeserta).toLowerCase() === String(currentStudent.noPeserta).toLowerCase());
+                if (existingIndex >= 0) db[existingIndex] = record;
+                else db.push(record);
+                saveDatabase(db);
+                localStorage.removeItem('ABDUSSALAM_FIQIH_2026_DRAFT');
+            } catch (err) {
+                console.error('Gagal menyimpan hasil:', err);
+                alert('Hasil ujian tidak dapat disimpan di browser ini. Silakan hubungi pengawas dan jangan tutup halaman.');
+            }
+
+            document.getElementById('starContainer').innerHTML = starsHTML;
+            document.getElementById('scoreGradeText').textContent = gradeText;
+            document.getElementById('motivationText').textContent = motivationText;
+            document.getElementById('resNama').textContent = currentStudent.nama;
+            document.getElementById('resKelas').textContent = currentStudent.kelas;
+            document.getElementById('resNoPeserta').textContent = currentStudent.noPeserta;
+            document.getElementById('resWaktuSubmit').textContent = new Date(submittedAt).toLocaleString('id-ID');
+            document.getElementById('resNilaiAkhir').textContent = finalScore;
+            document.getElementById('resBenar').textContent = correctCount;
+            document.getElementById('resSalah').textContent = wrongCount;
+            document.getElementById('resPersentase').textContent = percentage + '%';
+            showSection('secResult');
+        }
+
+        // --- ADMIN LOGIN & DASHBOARD ---
+        function showAdminLoginModal() {
+            document.getElementById('adminLoginErr').classList.add('hidden');
+            document.getElementById('modalAdminLogin').classList.remove('hidden');
+        }
+        function hideAdminLoginModal() {
+            document.getElementById('modalAdminLogin').classList.add('hidden');
+        }
+        function handleAdminLogin(e) {
+            e.preventDefault();
+            const username = document.getElementById('adminUser').value.trim();
+            const password = document.getElementById('adminPass').value;
+            // Demo credential; replace before production. Client-side login is not secure.
+            if (username === 'guru' && password === 'abdussalam2026') {
+                hideAdminLoginModal();
+                document.getElementById('adminPass').value = '';
+                showSection('secAdminDashboard');
+                renderAdminDashboard();
+            } else {
+                const err = document.getElementById('adminLoginErr');
+                err.textContent = 'Username atau password tidak sesuai.';
+                err.classList.remove('hidden');
+            }
+        }
+        function logoutAdmin() {
+            showSection('secLanding');
+        }
+        function getCategory(score) {
+            if (score >= 86) return 'Tinggi';
+            if (score >= 70) return 'Sedang';
+            return 'Rendah';
+        }
+        function renderAdminDashboard() {
+            const db = getDatabase();
+            const scores = db.map(x => Number(x.score) || 0);
+            const total = db.length;
+            const avg = total ? scores.reduce((a,b) => a+b, 0) / total : 0;
+            document.getElementById('admTotalPeserta').textContent = total;
+            document.getElementById('admRataNilai').textContent = avg.toFixed(1);
+            document.getElementById('admNilaiMax').textContent = total ? Math.max(...scores) : 0;
+            document.getElementById('admNilaiMin').textContent = total ? Math.min(...scores) : 0;
+            const counts = {Tinggi:0, Sedang:0, Rendah:0};
+            db.forEach(x => counts[getCategory(Number(x.score)||0)]++);
+            document.getElementById('countCatTinggi').textContent = counts.Tinggi + ' SISWA';
+            document.getElementById('countCatSedang').textContent = counts.Sedang + ' SISWA';
+            document.getElementById('countCatRendah').textContent = counts.Rendah + ' SISWA';
+            renderAdminTable();
+            if (typeof Chart !== 'undefined') {
+                const pieEl = document.getElementById('chartPieCategory');
+                const barEl = document.getElementById('chartBarScores');
+                if (chartPie) chartPie.destroy();
+                if (chartBar) chartBar.destroy();
+                chartPie = new Chart(pieEl, {type:'pie', data:{labels:['Tinggi','Sedang','Rendah'], datasets:[{data:[counts.Tinggi,counts.Sedang,counts.Rendah], backgroundColor:['#059669','#eab308','#ef4444']}]}, options:{responsive:true, maintainAspectRatio:false}});
+                chartBar = new Chart(barEl, {type:'bar', data:{labels:db.map(x=>x.nama), datasets:[{label:'Nilai', data:scores, backgroundColor:'#047857'}]}, options:{responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true,max:100}}}});
+            }
+        }
+        function renderAdminTable() {
+            const body = document.getElementById('admTableBody');
+            if (!body) return;
+            let db = getDatabase();
+            const term = (document.getElementById('admSearch')?.value || '').toLowerCase();
+            const kelas = document.getElementById('admFilterKelas')?.value || 'ALL';
+            const sort = document.getElementById('admSort')?.value || 'HIGHEST';
+            db = db.filter(x => (kelas === 'ALL' || x.kelas === kelas) && (`${x.nama} ${x.noPeserta}`.toLowerCase().includes(term)));
+            db.sort((a,b) => {
+                if (sort === 'LOWEST') return a.score - b.score;
+                if (sort === 'NAME') return a.nama.localeCompare(b.nama, 'id');
+                if (sort === 'NEWEST') return new Date(b.submittedAt) - new Date(a.submittedAt);
+                return b.score - a.score;
+            });
+            body.innerHTML = '';
+            if (!db.length) {
+                body.innerHTML = '<tr><td colspan="9" class="p-5 text-center text-gray-500">Belum ada data hasil asesmen pada browser ini.</td></tr>';
+                return;
+            }
+            db.forEach((x, i) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td class="p-3">${i+1}</td><td class="p-3"></td><td class="p-3"></td><td class="p-3"></td><td class="p-3 text-center">${Number(x.correctCount)||0}</td><td class="p-3 text-center">${Number(x.wrongCount)||0}</td><td class="p-3 text-center font-bold">${Number(x.score)||0}</td><td class="p-3 text-center">${getCategory(Number(x.score)||0)}</td><td class="p-3 text-center no-print"><button class="text-red-600 hover:underline" data-no="${encodeURIComponent(x.noPeserta)}">Hapus</button></td>`;
+                tr.children[1].textContent = x.noPeserta || '';
+                tr.children[2].textContent = x.nama || '';
+                tr.children[3].textContent = x.kelas || '';
+                tr.querySelector('button').addEventListener('click', () => deleteStudentResult(x.noPeserta));
+                body.appendChild(tr);
+            });
+        }
+        function deleteStudentResult(noPeserta) {
+            if (!confirm('Hapus hasil peserta ' + noPeserta + '?')) return;
+            saveDatabase(getDatabase().filter(x => x.noPeserta !== noPeserta));
+            renderAdminDashboard();
+        }
+        function exportToCSV() {
+            const db = getDatabase();
+            if (!db.length) { alert('Belum ada hasil asesmen untuk diunduh.'); return; }
+            const rows = [['No Peserta','Nama','Kelas','Benar','Salah','Nilai','Persentase','Waktu Selesai']];
+            db.forEach(x => rows.push([x.noPeserta,x.nama,x.kelas,x.correctCount,x.wrongCount,x.score,x.percentage,x.submittedAt]));
+            const csv = '\ufeff' + rows.map(row => row.map(v => '"' + String(v ?? '').replace(/"/g,'""') + '"').join(';')).join('\r\n');
+            const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url; a.download = 'Rekap_Asesmen_Fiqih_Ubudiyah_2026.csv'; a.click();
+            URL.revokeObjectURL(url);
+        }
+        function printAdminReport() { window.print(); }
+
+        // --- STARTUP CHECKS ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const count = RAW_QUESTIONS.length;
+            if (count !== 50) console.warn('Jumlah soal bukan 50:', count);
+            const startButton = document.querySelector('#secLanding button[onclick="goToIdentityForm()"]');
+            if (startButton) startButton.addEventListener('click', () => console.info('Form identitas dibuka'));
+        });
+    </script>
+</body>
+</html>
